@@ -37,7 +37,11 @@ def _eval_one(make, workloads, k):
     """make() -> a fresh predictor. For native workloads also attach ceiling + markov ref."""
     out = {}
     for name in workloads:
-        train, test, meta = load_workload(name)
+        try:
+            train, test, meta = load_workload(name)
+        except SystemExit as e:                  # optional data (e.g. ALFWorld) not downloaded
+            print(f"  skipping {name}: {e}")
+            continue
         model = make().fit(train)
         scores = metrics.score(lambda pfx, kk: model.predict(pfx, kk), test, k=k)
         rel = None
@@ -76,7 +80,11 @@ def _run_zoo(workloads, k, with_gru):
     print("=" * 110)
     print(f"{'workload':<20}" + "".join(f"{n:>14}" for n in ladder) + f"{'ceiling@'+str(k):>12}")
     for name in workloads:
-        train, test, meta = load_workload(name)
+        try:
+            train, test, meta = load_workload(name)
+        except SystemExit as e:                  # optional data (e.g. ALFWorld) not downloaded
+            print(f"{name:<20} -- skipped ({e})")
+            continue
         ceil = _ceiling_scores(name, test, k)["overall@k"] if is_native(name) else None
         cells = []
         for bname in ladder:
