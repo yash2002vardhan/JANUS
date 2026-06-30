@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "janus-bench"
+version = "0.1.0"
+description = "Janus — a benchmark for both faces of LLM memory: recall (looking back) and anticipatory prefetch (looking forward), on self-generated data with an exact Bayes ceiling."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{ name = "Yashvardhan Goel" }]
+keywords = ["benchmark", "memory", "retrieval", "prefetch", "anticipatory", "agents", "llm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: OS Independent",
+]
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+# the prefetch arm + the keyword/random recall baselines run on numpy alone.
+gru = ["torch>=1.13"]                  # the optional learned predictor baseline
+recall = ["fastembed>=0.2"]            # local bge-small encoder for the embedding recall baselines
+recall-openai = ["openai>=1.0"]        # OpenAI text-embedding-3-small (JANUS_EMBED=openai)
+all = ["torch>=1.13", "fastembed>=0.2", "openai>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/yash2002vardhan/JANUS"
+Repository = "https://github.com/yash2002vardhan/JANUS"
+
+[project.scripts]
+janus = "janus.run:main"
+
+[tool.setuptools]
+packages = ["janus", "janus.generators"]
+
+[tool.setuptools.package-data]
+janus = ["manifest.json", "leaderboard.json"]

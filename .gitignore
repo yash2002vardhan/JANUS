@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Janus run artifacts (regenerate locally)
+scorecard.json
+recall_scorecard.json
+*.log
+
+# seeded after v0.1.0 once reference numbers are re-verified with `--zoo`
+janus/leaderboard.json
+
+# downloaded optional data (never redistributed)
+janus/data/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

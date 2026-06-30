@@ -1,0 +1,108 @@
+{
+  "states_version": "1.0",
+  "split_fraction": 0.7,
+  "split_rule": "sort by sha1(chain), cut frac",
+  "sources": {
+    "alfworld": {
+      "hf": "agent-eto/eto-sft-trajectory",
+      "split": "alfworld",
+      "file": "alfworld_sft.json",
+      "license": "MIT (ETO/ALFWorld)"
+    }
+  },
+  "workloads": {
+    "flow:easy": {
+      "name": "flow:easy",
+      "regime": "generated \u00b7 short / high-ceiling",
+      "n_chains": 1500,
+      "avg_len": 9.59,
+      "train_vocab": 61,
+      "train": 1050,
+      "test": 450,
+      "checksum_sha256": "71e2c8db626e1f7232a1b79525a9f4c6d7fe30f5337bc502f02ce6f7b4a4cc31"
+    },
+    "flow:branchy": {
+      "name": "flow:branchy",
+      "regime": "generated \u00b7 long / high-entropy",
+      "n_chains": 1500,
+      "avg_len": 21.83,
+      "train_vocab": 61,
+      "train": 1050,
+      "test": 450,
+      "checksum_sha256": "3385e00ce7856c903ff4002573931fded2857c1a03641a45a66109c75589238c"
+    },
+    "flow:longdep": {
+      "name": "flow:longdep",
+      "regime": "generated \u00b7 long / long-range memory",
+      "n_chains": 1500,
+      "avg_len": 17.89,
+      "train_vocab": 61,
+      "train": 1050,
+      "test": 450,
+      "checksum_sha256": "fab8ea1ddb24dc9e4ceecee075800c4ea4677e03d8df3e0d651658169f5638eb"
+    },
+    "flow:foggy": {
+      "name": "flow:foggy",
+      "regime": "generated \u00b7 heavy aliasing / inference",
+      "n_chains": 1500,
+      "avg_len": 14.84,
+      "train_vocab": 61,
+      "train": 1050,
+      "test": 450,
+      "checksum_sha256": "94e54bdb3bb04ab4b3cf0cff9c2b3bafb78cacabf0b0b10a40b61942b724f389"
+    },
+    "flow:interrupted": {
+      "name": "flow:interrupted",
+      "regime": "generated \u00b7 with distractions",
+      "n_chains": 1500,
+      "avg_len": 20.31,
+      "train_vocab": 62,
+      "train": 1050,
+      "test": 450,
+      "checksum_sha256": "89b6f334d01706eeaebd3ff2ae2e852dc324062aae232d2592366c967d127e15"
+    },
+    "random-control": {
+      "name": "random-control",
+      "regime": "i.i.d. / UNPREDICTABLE (neg. control)",
+      "n_chains": 400,
+      "avg_len": 10.09,
+      "train_vocab": 30,
+      "train": 280,
+      "test": 120,
+      "checksum_sha256": "c9143b2262acfd729d73b9fc0f421847ef261809c060227c6257542cb67b95f5"
+    },
+    "alfworld:action": {
+      "error": "missing data file 'alfworld_sft.json' \u2014 run: python -m janus.datasets --download alfworld"
+    }
+  },
+  "recall_workloads": {
+    "recall:lookup": {
+      "name": "recall:lookup",
+      "category": "lookup",
+      "n_cases": 300,
+      "avg_events": 9,
+      "checksum_sha256": "49cec2041f5357a7fdadf97f1c33116af994949ff683f61bf2b0e162a3a147c6"
+    },
+    "recall:update": {
+      "name": "recall:update",
+      "category": "update",
+      "n_cases": 300,
+      "avg_events": 12,
+      "checksum_sha256": "c19256542cbd0bb94452af73f2f39875206d69370ec3d92a7f0259c8600c874e"
+    },
+    "recall:aggregate": {
+      "name": "recall:aggregate",
+      "category": "aggregate",
+      "n_cases": 300,
+      "avg_events": 15.7,
+      "checksum_sha256": "98f2e16b66943d0ec23abd95fe96881699c790410fc563ae9e3615254b003018"
+    },
+    "recall:multisession": {
+      "name": "recall:multisession",
+      "category": "multisession",
+      "n_cases": 300,
+      "avg_events": 17,
+      "checksum_sha256": "e7ff0fc09d842dc77f1dcc3935811efdb9de879484653475510ef2b9fc7b7026"
+    }
+  }
+}

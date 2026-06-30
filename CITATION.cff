@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use Janus, please cite it as below."
+title: "Janus: An Anticipatory Memory Benchmark"
+abstract: "A benchmark for both faces of LLM memory — recall (find the right past fact) and anticipatory prefetch (predict and warm the next-needed context) — on self-generated data with an exact Bayes ceiling and judge-free recall grading."
+authors:
+  - family-names: "Goel"
+    given-names: "Yashvardhan"
+version: "0.1.0"
+license: "Apache-2.0"
+repository-code: "https://github.com/yash2002vardhan/JANUS"
+url: "https://github.com/yash2002vardhan/JANUS"
+keywords:
+  - benchmark
+  - memory
+  - retrieval
+  - prefetch
+  - anticipatory
+  - agents
+  - llm

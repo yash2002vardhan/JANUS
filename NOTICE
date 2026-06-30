@@ -1,0 +1,26 @@
+Janus — Anticipatory Memory Benchmark
+Copyright 2026 Yashvardhan Goel
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+----------------------------------------------------------------------
+Scored core
+----------------------------------------------------------------------
+The scored benchmark (the generated "flow:*" prefetch workloads and the
+"recall:*" workloads, together with their generators, oracle/ceiling, and
+metrics) is original work and contains no third-party data. It is fully
+synthetic and reproducible from seeds.
+
+----------------------------------------------------------------------
+Optional third-party data (NOT redistributed, NOT part of the scored core)
+----------------------------------------------------------------------
+The optional real-world cross-check workload "alfworld:action" (and the
+"alfworld:verb" extra) reads the ALFWorld SFT trajectories from:
+
+    agent-eto/eto-sft-trajectory  (ETO / ALFWorld), licensed MIT.
+
+No ALFWorld data is included in this distribution. It is fetched on demand
+by `python -m janus.datasets --download alfworld` directly from the source
+above, and is used only to show that the generated-data findings replicate
+on a real agent dataset. Users who download it are bound by that dataset's
+own license.

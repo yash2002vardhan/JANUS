@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install (core, no heavy extras)
+        run: pip install -e .
+      - name: Prefetch reference ladder
+        run: python -m janus.run --zoo
+      - name: Recall arm (keyword/random anchors run on numpy alone)
+        run: pip install .[recall] && python -m janus.run --recall
+      - name: Manifest checksums reproduce
+        run: python -m janus.datasets --manifest --summary
