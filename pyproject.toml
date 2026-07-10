@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"
 authors = [{ name = "Yashvardhan Goel" }]
-keywords = ["benchmark", "memory", "retrieval", "prefetch", "anticipatory", "agents", "llm"]
+keywords = ["benchmark", "memory", "retrieval", "prefetch", "anticipatory", "agents", "llm", "ai-safety", "evaluation"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Intended Audience :: Science/Research",

@@ -166,6 +166,53 @@ predict and retrieve stages are independent — stated as a caveat, not a jointl
 The two arm scores remain the primary, diagnosable output. Run:
 `python -m janus.run --end-to-end [--predictor mod:Class] [--recall-system mod:Class]`.
 
-## 12. Versioning
+## 12. Serving track (lands in v0.2)
+The two arms grade *prediction* (which state, when) and *retrieval* (which content). A deployed
+anticipatory memory is ultimately graded by a third quantity: **did prefetch put the right content
+in the cache before it was asked for?** The serving protocol (already validated in a research
+harness; standardized here in v0.2):
+
+- Replay each flow as a live session. After every step the submitted system may **stage up to
+  `stage_n` rows into an LRU cache** (capacity `cache_size`) drawn from a fixed text corpus of
+  events from the *other* (train) flows.
+- Ground truth per step: a **fixed reactive retriever's top-k** over that corpus for the next
+  step's query. The grade is exact-match against row IDs — no similarity credit, so it cannot be
+  gamed by staging "close" content:
+  `coverage = |top-k ∩ staged| / k` (partial-serving ceiling) and
+  `serve-rate = [coverage == 1]` (zero-blocking floor).
+- Headline = serve-rate as **% of an oracle ceiling** (an oracle that stages the true next query's
+  dense neighborhood at the same budget), split into **retention** (next state == current) vs
+  **new-state** steps — persistence-style caching owns retention; learned prediction must earn the
+  jumps. Reference ladder: random floor, persistence null, a content-GRU baseline.
+- What v0.2 must add to make this runnable on generated data: a **text rendering layer** — each
+  abstract state emits event *text* (with paraphrase variation), so a corpus and a deterministic
+  retrieval truth exist. The HMM states stay the hidden generator; the text becomes the
+  observable, and the Bayes-ceiling property is preserved because the renderer is part of the
+  frozen release.
+
+## 13. Safety threat model (the arms, read as safety properties)
+An anticipatory memory decides what an agent attends to **before the agent asks**. Its failure
+modes are silent — nothing errors, the agent just acts on wrong context — so they can only be
+measured against ground truth, which is exactly what the generated data provides. Each existing
+mechanism doubles as a measurement of one safety property:
+
+| mechanism | safety property it measures |
+|---|---|
+| `recall:update` (the temporal trap) | **Correction persistence.** When a fact is superseded — a revoked permission, an updated instruction, a patched guideline — does the system return the *current* value or confidently serve the stale one? The `--detail` diagnostic isolates exactly this failure (time, separated from meaning). |
+| prefetch % of ceiling | **Bounded anticipation.** How much of what the system pre-loads is explained by the true task structure vs guessing — an anchor for how far pre-loaded context can silently steer behavior. |
+| `random-control` | **Eval integrity.** Structureless by construction, so any method claiming signal on it is exposed; a high Janus score cannot be gamed by overfitting the grader. |
+| exact ceiling + judge-free grading | **Auditability.** Every grade is arithmetic from the published generator — reproducible by anyone, no LLM judge whose own failure modes sit inside the loop. A score is evidence usable in a governance argument, not an opinion. |
+| serving track (§12, v0.2) | **Attributable staging.** Exact-match on row IDs means every item that reaches the cache is exactly attributable — the precondition for auditing *what* a prefetcher exposed an agent to, including stale or contaminated rows in a store shared across agents. |
+
+**Planned — the adversarial arm (v0.3).** Owning the generator makes **memory poisoning**
+measurable: plant a controlled fraction of adversarial events in the corpus (superseded or false
+values with high surface plausibility, placed to sit inside a predictor's staged neighborhood),
+then grade **exposure amplification** — the rate at which poisoned rows reach the agent's context
+under anticipatory prefetch vs a reactive retriever at the same budget. Because which rows are
+poisoned and which are needed is known by construction, amplification is exact-graded with no
+judge. The question it answers: *does anticipation widen the poisoning attack surface, and by how
+much per unit of prefetch benefit?*
+
+## 14. Versioning
 `STATES_VERSION` (tokenization), the generator settings in `generators/suite.py` and
 `generators/recall.py`, and `manifest.json` checksums (prefetch + recall) define a frozen release.
