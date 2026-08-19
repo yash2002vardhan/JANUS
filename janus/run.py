@@ -167,8 +167,10 @@ def _run_opener(system_spec, k, stage_n, cache_size, n_sessions, warmup, out_pat
         print(f"{stream_id:<16}{s['coverage']:>9.1%} {s['ceiling']:>8.1%}{pct:>7.0%}"
               f"{s['n_graded']:>10}")
     print("\n%ceil = how close to the exact expected-coverage-maximizing ceiling on this")
-    print("stream's true opening bias. mixed-team has no real bias by design (the control) —")
-    print("a system should not score meaningfully above the random floor there.")
+    print("stream's true opening bias. mixed-team has no real TASK/AREA bias by design (the")
+    print("control) — its ceiling is lower than the biased streams' but is NOT the random floor")
+    print("(embedding overlap between semantically similar documents gives even an unbiased")
+    print("stream some real structure); judge mixed-team against ITS OWN %ceil, not against 0%.")
     scorecard = {"system": label, "k": k, "stage_n": stage_n, "cache_size": cache_size,
                 "n_sessions": n_sessions, "warmup": warmup, "streams": r}
     Path(out_path).write_text(json.dumps(scorecard, indent=2))

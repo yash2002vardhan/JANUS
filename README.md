@@ -129,6 +129,16 @@ while `SessionMixture`, which differs from `NGram1` only by carrying a belief ab
 session's hidden setup, reaches 85%. That difference is attributable to one capability with
 nothing else varying, which is what makes the row evidence rather than a harder benchmark.
 
+**The honest caveat on that comparison:** `SessionMixture`'s assumption — one hidden setup per
+session, fixed at the start — is not a generic "has memory" property. It is exactly how every
+generator in this suite draws its sessions (see `workflow.py` / `deferred.py`), so the
+baseline's model family is shaped to match the true structure on purpose. It never sees test
+labels (it is fit unsupervised, by EM, on train sessions only), so this is not leakage — but it
+means the 85% is the ceiling for what a system built around *this specific* assumption can
+achieve, not proof that any system "with memory" would score similarly. Read the row as
+"counting alone cannot do this, carrying the *right kind* of belief can" — not as a universal
+memory-vs-no-memory verdict.
+
 The obvious rebuttals — *use a longer window*, *use more data* — are both measured and both fail.
 The corridor is 5 chores drawn uniformly from 12, so distinct literal contexts of length L grow
 like 12^L while the latent has only 8 values: widening the window buys sparsity, not signal.

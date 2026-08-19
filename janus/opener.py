@@ -13,22 +13,30 @@ THE SETUP:
     (workflow.py always emits it, identical across every stream and context — verified, not
     assumed: observing it updates the model's belief about which context it's in by exactly
     zero, since it is emitted with the same probability from every context's start state). So
-    grading against it would be a content-free test. The real, stream-specific signal is the
-    SECOND token (the task announcement) — that is what a system has to have pre-staged before
-    it happens, with zero observations of the current session to go on.
+    grading against it would be a content-free test. The token after that ('plan:<task>') IS
+    informative, but only 4 possible tasks exist — with stage_n=8 room to spare, a system can
+    "solve" that alone by pre-staging all 4 possible answers regardless of whether it has learned
+    any real bias, which is exactly what happened the first time this track shipped: the
+    no-bias control scored nearly as high as the genuinely biased streams, indistinguishable
+    from a rigged benchmark from the outside even though the cause was benign (see the fix
+    below). Grading target is therefore the THIRD token instead — the first work-phase step,
+    which crosses task and area (roughly twenty distinct outcomes, not four) — so hedging across
+    every possibility no longer fits in an 8-item budget, and a real score there requires having
+    actually learned the stream's bias.
   - Each stream's sessions are replayed IN ORDER. The first `warmup` sessions build real history
     (open_session() then step() through the whole session, same shape as the serving track) —
     a real system accumulates whatever state it needs from genuinely living through them. From
     session `warmup` onward we ALSO grade: right after open_session(), BEFORE the session's own
-    events are observed, does the pre-staged cache already cover the second token's need?
+    events are observed, does the pre-staged cache already cover the third token's need?
     Replay continues normally afterward so history keeps growing for the next session too.
   - GROUND TRUTH and grading reuse the serving track exactly (same FixedReactiveRetriever, same
     exact row-ID coverage) — only WHEN the check happens differs.
-  - CEILING: the true marginal P(second token) is (pi @ A) @ B — pi already encodes the stream's
-    real task_prior, and observing the first token changes nothing (see above), so this needs no
-    forward pass, just the compiled model's own start distribution pushed through one
-    transition. Converted to a staging decision via the exact same linear expected-value policy
-    the serving track's ceiling uses (janus.serving._optimal_stage) — reused, not re-derived.
+  - CEILING: the true marginal P(third token) is pi @ A @ A @ B — pi already encodes the
+    stream's real task_prior, observing the first token changes nothing (see above), and the
+    start->plan->first-work-phase transitions are deterministic, so this still needs no forward
+    pass, just the compiled model's own start distribution pushed through two transitions.
+    Converted to a staging decision via the exact same linear expected-value policy the serving
+    track's ceiling uses (janus.serving._optimal_stage) — reused, not re-derived.
 """
 
 from __future__ import annotations
@@ -47,17 +55,20 @@ from janus.serving import (LIVE_VARIANT, FixedReactiveRetriever, _apply, _doc_to
 
 def _replay_stream(sys, stream_id: str, sessions: list[list[str]], retriever, k: int,
                    stage_n: int, cache_size: int, warmup: int) -> list[float]:
-    """Coverage of the pre-staged cache against each GRADED session's own second-token need.
+    """Coverage of the pre-staged cache against each GRADED session's own third-token need.
     Sessions before `warmup` still run in full (building real history) but are not scored."""
     rows: list[float] = []
     for si, seq in enumerate(sessions):
-        if len(seq) < 2:
+        if len(seq) < 3:
             continue
         pre_staged = sys.open_session(stream_id, stage_n)[:stage_n]
         cache: OrderedDict = OrderedDict()
         _apply(cache, pre_staged, cache_size)
         if si >= warmup:
-            query_text = render(seq[1], LIVE_VARIANT)          # the first INFORMATIVE need
+            query_text = render(seq[2], LIVE_VARIANT)          # the first work-phase step —
+                                                                # crosses task AND area, ~20
+                                                                # outcomes, not the 4-way
+                                                                # task-only token at seq[1]
             topk = retriever.search(query_text, k)
             rows.append(len(set(topk) & set(cache.keys())) / max(k, 1))
         for i in range(len(seq) - 1):
@@ -72,13 +83,13 @@ def _replay_stream_oracle(stream_id: str, sessions: list[list[str]], id_by_token
     """The ceiling: computed ONCE per stream (position-independent — nothing has been observed
     yet) and reused for every graded session on it."""
     m = build(stream_id)
-    p_second = (m.pi @ m.A) @ m.B
-    staged = _optimal_stage(p_second, m.toks, m.tok2i, id_by_token, stage_n, k)
+    p_third = ((m.pi @ m.A) @ m.A) @ m.B
+    staged = _optimal_stage(p_third, m.toks, m.tok2i, id_by_token, stage_n, k)
     rows: list[float] = []
     for si, seq in enumerate(sessions):
-        if len(seq) < 2 or si < warmup:
+        if len(seq) < 3 or si < warmup:
             continue
-        query_text = render(seq[1], LIVE_VARIANT)
+        query_text = render(seq[2], LIVE_VARIANT)
         topk = retriever.search(query_text, k)
         rows.append(len(set(topk) & set(staged)) / max(k, 1))
     return rows
@@ -153,8 +164,9 @@ class MajorityOpener:
     """The fair, learnable reference — not a strawman. Mirrors forefetch's own real PRIMARY
     opener strategy (forefetch/memory.py's _stage_opener_bets: count what past sessions on this
     stream actually fetched first) as closely as a system with no internal row-id access can:
-    during warmup, embed each session's SECOND event (the first informative one) and count its
-    nearest corpus doc; from then on, always stage the stage_n most frequently-counted docs for
+    during warmup, embed each session's THIRD event (the first informative one, see the module
+    docstring's GRADING TARGET note) and count its nearest corpus doc; from then on, always stage
+    the stage_n most frequently-counted docs for
     this stream."""
     def fit(self, corpus_by_stream):
         self._encoder = _make_encoder()
@@ -173,8 +185,8 @@ class MajorityOpener:
 
     def step(self, stream_id, event_text, stage_n):
         n = self._since_open[stream_id]
-        if n == 1:                                     # the SECOND event of this session —
-            q = _unit(self._encoder.encode([event_text]))[0]      # the first informative one
+        if n == 2:                                     # the THIRD event of this session —
+            q = _unit(self._encoder.encode([event_text]))[0]      # matches the grading target
             nearest = int(np.argmax(self._M[stream_id] @ q))
             doc_id = self._ids[stream_id][nearest]
             self._counts[stream_id][doc_id] = self._counts[stream_id].get(doc_id, 0) + 1
