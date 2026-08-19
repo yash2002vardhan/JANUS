@@ -61,6 +61,16 @@
       "test": 450,
       "checksum_sha256": "89b6f334d01706eeaebd3ff2ae2e852dc324062aae232d2592366c967d127e15"
     },
+    "flow:deferred": {
+      "name": "flow:deferred",
+      "regime": "generated \u00b7 deferred binding / MEMORY",
+      "n_chains": 1500,
+      "avg_len": 63.12,
+      "train_vocab": 29,
+      "train": 1050,
+      "test": 450,
+      "checksum_sha256": "741fdec08f3eeac2c41090c5a5b39f3dd8739245d4afea751f8979331423b750"
+    },
     "random-control": {
       "name": "random-control",
       "regime": "i.i.d. / UNPREDICTABLE (neg. control)",

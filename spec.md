@@ -84,6 +84,7 @@ every predictor). Default `k = 3`.
 | `flow:longdep` | long; early clue needed late (memory) | ~72% |
 | `flow:foggy` | heavy fog; area must be inferred | ~85% |
 | `flow:interrupted` | distraction detours | ~67% |
+| `flow:deferred` | **binding named once, acted on across a context wall (memory)** | ~37% |
 | `random-control` | i.i.d. — unpredictable by construction (floor) | — |
 | `alfworld:action` | one **optional** real-world cross-check (download-on-demand) | — |
 
@@ -94,6 +95,48 @@ synthetic `pipeline` remain as **EXTERNAL** extras, runnable by name. The other 
 traces (ToolBench / SWE-smith / OpenHands) were dropped: too short/easy to discriminate (ToolBench
 ~3 steps; coding traces ~85–100% solved by trivial guessers) and they carried mixed third-party
 licenses.
+
+### 7.1 Why `flow:deferred` exists (and comes from a different generator)
+
+The first five flows share one mechanism (`generators/workflow.py`) under different knob
+settings, and that mechanism has a ceiling of its own as a *memory* test: a step token is
+`patch:auth`, which announces the phase and the hidden area simultaneously. The latent state is
+therefore nearly a function of the last observation, so an order-2 count model reaches 89–92% of
+the exact ceiling on all five. Sliced by step kind (`python -m janus.run --slices`), the memory
+demand sits almost entirely in the single `ship:<task>` step: a 44-67 point oracle-over-NGram2
+gap on 4.7-11.3% of steps, contributing 29-73% of each flow's total shortfall from the ceiling. `alias_rate` cannot repair this: it makes informative steps
+harder *and* rarer in equal measure, which is why `flow:foggy` has the highest NGram2 score in
+the suite. A benchmark whose thesis is that anticipatory memory is a distinct capability needs at
+least one regime where trivial methods provably cannot substitute for it.
+
+`flow:deferred` (`generators/deferred.py`) is that regime. It compiles to the same explicit
+`(pi, A, B)` Model and is read by the same sampler and the same exact oracle, so the ceiling
+guarantee is unchanged; only the emission structure differs. A session announces its target once
+(`assign:<area>`), then emits a corridor of uniform, uninformative chores, then acts on the target
+(`touch:<area>`), and repeats. Two properties carry the argument:
+
+1. **A context wall.** The corridor is `gap=5` chores with a ragged geometric tail, so a
+   fixed-order n-gram at an act position never sees the previous `touch:`.
+2. **Contexts that cannot generalize.** Chores are uniform over 12 tokens, so distinct literal
+   contexts of length L grow like 12^L, while the latent has only 8 values. Widening the window
+   buys sparsity, not signal.
+
+The consequence is that the failure is *not* "n-grams need a longer window" — no fixed order
+escapes, and quadrupling the training corpus does not move any of them, while a latent-state
+model is unaffected. Measured on the frozen workload, memoryless and short-context predictors sit
+within a point of `Marginal` (which conditions on nothing), and `SessionMixture` reaches 85%.
+`--slices` localises it exactly: the `touch:*` step is 15.9% of steps with a ceiling of 100.0%
+and an NGram2 score of 0.0% — never once correct in the top 3 — and that one slice accounts for
+the whole aggregate shortfall.
+
+`SessionMixture` is deliberately the *smallest* honest step up from `NGram1`: identical order-1
+conditioning on the last token, plus a posterior over the session's persistent hidden setup
+inferred from the whole prefix. The 28-point difference is therefore attributable to one
+capability with nothing else varying. Its assumption — one setup per session, fixed at the start —
+is exactly how every generator here draws task/area/difficulty/flaky, which is what makes it a
+fair upper reference for the counting ladder rather than a tuned winner. (Full Baum-Welch over
+per-timestep latents was tried first and plateaus at 62%: the corridor dominates the likelihood,
+so EM converges before assembling the binding structure.)
 
 ## 8. Neutrality guarantees (it can't be gamed)
 - **Standalone.** Imports nothing outside the standard library and numpy; the reference

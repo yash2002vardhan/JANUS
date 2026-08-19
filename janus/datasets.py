@@ -120,6 +120,8 @@ _FLOWS = {
     "flow:longdep": ("generated · long / long-range memory", "flow-longdep", 103),
     "flow:foggy": ("generated · heavy aliasing / inference", "flow-foggy", 104),
     "flow:interrupted": ("generated · with distractions", "flow-interrupted", 105),
+    # the memory-critical setting: short context provably cannot fake it (generators/deferred.py)
+    "flow:deferred": ("generated · deferred binding / MEMORY", "flow-deferred", 106),
 }
 _FLOW_N = 1500
 

@@ -7,6 +7,11 @@ These are baselines, NOT the benchmark's preferred system. They span the honest 
   RetentionOnly   — guess the current state (pure caching). HIGH overall hit, ~0 new-state:
                     the control that exposes anything masquerading as anticipation.
   NGram1 / NGram2 — order-1 and order-2 (prev,cur) transition counts with backoff.
+  SessionMixture  — the MEMORYFUL reference: same order-1 conditioning as NGram1, but it also
+                    carries a belief about the session's persistent hidden setup. This is the
+                    ladder's other bookend — RetentionOnly shows what pure caching buys, this
+                    shows what memory buys. On flow:deferred it is the only counting baseline
+                    that leaves the marginal floor.
   GRU             — an optional learned-baseline reference (a standard next-step RNN; needs
                     torch). Included so the ladder has a learned point of comparison, not just
                     counting baselines.
@@ -18,6 +23,8 @@ from __future__ import annotations
 
 import random
 from collections import Counter, defaultdict
+
+import numpy as np
 
 
 class Random:
@@ -98,6 +105,82 @@ class NGram2(_NGram):
         super().__init__(order=2)
 
 
+class SessionMixture:
+    """Mixture-of-bigrams over a latent per-session setup, fit by EM on train only.
+
+    Model: each session is drawn from one of C hidden setups; each setup has its own order-1
+    transition table. At predict time it holds a posterior over which setup THIS session is —
+    updated from the entire prefix, not a window — and predicts with the posterior-weighted
+    mixture. So it conditions on exactly what NGram1 conditions on (the last token) plus one
+    thing NGram1 cannot represent: a belief about the session's persistent hidden state.
+
+    That single difference is the contrast the benchmark exists to measure, which is why this
+    is a reference baseline and not a submission: it is the cheapest honest thing that carries
+    memory. Its assumption — that a session has ONE setup, fixed at the start — is exactly how
+    the generators draw task/area/difficulty/flaky, so it is a fair upper reference for the
+    counting ladder, not a tuned winner.
+    """
+
+    def __init__(self, n_clusters: int = 24, iters: int = 30, seed: int = 0,
+                 alpha: float = 0.1):
+        self.C, self.iters, self.seed, self.alpha = n_clusters, iters, seed, alpha
+
+    def fit(self, train):
+        rng = np.random.default_rng(self.seed)
+        self._toks = sorted({t for seq in train for t in seq})
+        self._t2i = {t: i for i, t in enumerate(self._toks)}
+        V, C, a = len(self._toks), self.C, self.alpha
+        seqs = [[self._t2i[t] for t in seq] for seq in train if len(seq) >= 2]
+        # degenerate corpus (no chain of length >= 2): collapse to a single uniform component
+        if not seqs or V == 0:
+            self._logw = np.zeros(1)
+            self._logT = np.full((1, max(V, 1), max(V, 1)), -np.log(max(V, 1)))
+            self._logU = np.full((1, max(V, 1)), -np.log(max(V, 1)))
+            return self
+        firsts = np.array([s[0] for s in seqs])
+        pairs = [np.array([s[:-1], s[1:]]) for s in seqs]
+
+        r = rng.random((len(seqs), C)) + 1e-3
+        r /= r.sum(1, keepdims=True)
+        logw = np.full(C, -np.log(C))
+        logT = np.full((C, V, V), -np.log(V))
+        logU = np.full((C, V), -np.log(V))
+        for _ in range(self.iters):
+            # M step — responsibility-weighted transition and first-token counts
+            T = np.full((C, V, V), a)
+            U = np.full((C, V), a)
+            for i, pr in enumerate(pairs):
+                np.add.at(T, (slice(None), pr[0], pr[1]), r[i][:, None])
+                U[:, firsts[i]] += r[i]
+            logT = np.log(T / T.sum(2, keepdims=True))
+            logU = np.log(U / U.sum(1, keepdims=True))
+            logw = np.log(r.mean(0).clip(min=1e-12))
+            # E step — which setup best explains each WHOLE session
+            ll = np.empty((len(seqs), C))
+            for i, pr in enumerate(pairs):
+                ll[i] = logU[:, firsts[i]] + logT[:, pr[0], pr[1]].sum(1)
+            ll += logw
+            ll -= ll.max(1, keepdims=True)
+            r = np.exp(ll)
+            r /= r.sum(1, keepdims=True)
+        self._logw, self._logT, self._logU = logw, logT, logU
+        return self
+
+    def predict(self, prefix, k):
+        ids = [self._t2i[t] for t in prefix if t in self._t2i]
+        if not ids:
+            return self._toks[:k]
+        # posterior over this session's setup, from the WHOLE prefix (this is the memory)
+        lp = self._logw + self._logU[:, ids[0]]
+        if len(ids) > 1:
+            lp = lp + self._logT[:, ids[:-1], ids[1:]].sum(1)
+        lp -= lp.max()
+        post = np.exp(lp)
+        post /= post.sum()
+        p = post @ np.exp(self._logT[:, ids[-1], :])
+        return [self._toks[i] for i in np.argsort(-p)[:k]]
+
+
 class GRU:
     """Full-prefix GRU next-state model (optional; requires torch)."""
     def __init__(self, dim=64, hidden=128, epochs=40, max_prefix=64):
@@ -150,4 +233,4 @@ class GRU:
 
 
 # the default reference ladder (GRU excluded — opt-in via --gru, it's slow)
-ZOO = ["Random", "Marginal", "RetentionOnly", "NGram1", "NGram2"]
+ZOO = ["Random", "Marginal", "RetentionOnly", "NGram1", "NGram2", "SessionMixture"]

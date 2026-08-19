@@ -69,3 +69,30 @@ class Oracle:
             if s > 0:
                 f = f / s
         return preds
+
+    def predict_sequence_proba(self, seq: list[str]) -> list[np.ndarray]:
+        """Same one-pass forward algorithm as predict_sequence, but returns the RAW probability
+        vector over the full token vocabulary (index-aligned with self.m.toks) at each position,
+        instead of collapsing it to a ranked top-k. Additive, non-breaking: predict_sequence's
+        own behavior is untouched.
+
+        Needed by consumers that must reason about the whole distribution, not just the
+        single best guess — e.g. janus/serving.py's staging policy, which stages the DOCUMENTS
+        most likely to be needed, and two different next-token guesses can point at overlapping
+        documents (near-duplicate phrasing), which a top-k list alone can't express."""
+        m = self.m
+        oi = m.tok2i.get(seq[0])
+        f = m.pi.copy()
+        if oi is not None:
+            f = f * m.B[:, oi]
+        f = f / f.sum().clip(min=1e-300)
+        out = []
+        for t in range(1, len(seq)):
+            fwd = f @ m.A
+            out.append(fwd @ m.B)                        # the raw p_tok vector, this position
+            oj = m.tok2i.get(seq[t])
+            f = fwd * m.B[:, oj] if oj is not None else fwd
+            s = f.sum()
+            if s > 0:
+                f = f / s
+        return out

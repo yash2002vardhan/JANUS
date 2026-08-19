@@ -9,12 +9,23 @@ suite is one mechanism observed under different regimes:
                    predict the final 'ship' step; big gap between memory-less and perfect.
   flow-foggy       very high alias rate — the hidden area is hard to read off; rewards inference.
   flow-interrupted frequent ping detours — tests whether a memory survives distraction.
+
+One setting comes from a DIFFERENT machine (generators/deferred.py) because no knob on the
+one above can produce it: in all five flows the step token names the hidden area outright, so
+last-step statistics are already near-optimal and no alias_rate setting changes that (raising
+it makes each informative step harder but rarer, so the aggregate gap never opens).
+
+  flow-deferred    the target is named once and then only acted on, across a corridor longer
+                   than any practical context window — the setting where memoryless and
+                   short-context methods sit at the marginal floor and only a system that
+                   carries session state approaches the ceiling.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from janus.generators import deferred
 from janus.generators.oracle import Oracle
 from janus.generators.workflow import Config, compile_model, sample
 
@@ -40,15 +51,24 @@ FLOWS: dict[str, Config] = {
                                interrupt=0.15, interrupt_stay=0.5),
 }
 
+# settings compiled by generators/deferred.py rather than workflow.py (see the module docstring)
+DEFERRED: dict[str, deferred.Config] = {
+    # gap=5 chores between references: measured, no n-gram order 1..8 beats the marginal floor
+    # and 4x training data does not move them (ceiling ~37%).
+    "flow-deferred": deferred.Config(gap=5, tail=0.15, stop=0.10),
+}
+
 _MODELS: dict = {}
 
 
 def build(name: str):
     """Compile (and cache) the HMM for a named setting."""
-    if name not in FLOWS:
-        raise KeyError(f"unknown flow {name!r}; choices: {', '.join(FLOWS)}")
+    if name not in FLOWS and name not in DEFERRED:
+        raise KeyError(f"unknown flow {name!r}; "
+                       f"choices: {', '.join(list(FLOWS) + list(DEFERRED))}")
     if name not in _MODELS:
-        _MODELS[name] = compile_model(FLOWS[name])
+        _MODELS[name] = (deferred.compile_model(DEFERRED[name]) if name in DEFERRED
+                         else compile_model(FLOWS[name]))
     return _MODELS[name]
 
 
