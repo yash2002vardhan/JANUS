@@ -59,6 +59,15 @@ python -m janus.run --recall --recall-system my_pkg.my_mod:MyMemory
 # WHOLE-SYSTEM: one derived end-to-end number = prefetch-readiness x recall-correctness
 python -m janus.run --end-to-end [--predictor mod:Class] [--recall-system mod:Class]
 
+# SERVING (v0.2): real text staged into a real cache, graded against a fixed retriever's top-k
+python -m janus.run --serving [--serving-system my_pkg.my_mod:MyStaging]
+
+# OPENER (v0.3): session-start readiness, learned per stream from that stream's own history
+python -m janus.run --opener [--opener-system my_pkg.my_mod:MyOpener]
+
+# HANDOFF (v0.4): cross-agent priming, learned purely from behavior (never declared)
+python -m janus.run --handoff [--handoff-system my_pkg.my_mod:MyHandoff]
+
 # rebuild the frozen checksums after any change
 python -m janus.datasets --manifest --summary
 ```
@@ -68,13 +77,26 @@ python -m janus.datasets --manifest --summary
 composes them into one number — `context-ready x content-correct` — a derived estimate (the two
 stages are measured on different data, so it assumes they're independent).
 
-**Announced — the serving track (v0.2).** A third, deployment-grade metric: replay each flow live,
-let the system stage rows into a budgeted LRU cache each step, and grade **exact-match against a
-fixed reactive retriever's top-k** — `serve-rate` (all k staged = zero-blocking) and `coverage`
-(partial serving), reported as % of an oracle ceiling with a retention/new-state split. Ungameable
-(IDs, not similarity) and it measures what an anticipatory memory is *for*: the right content in
-the cache before it's asked for. Requires text-rendered flows — the rendering layer is what v0.2
-adds. Protocol details in `spec.md` §12.
+**The serving track (v0.2).** A deployment-grade metric: replay each flow live, let the system
+stage rows into a budgeted LRU cache each step, and grade **exact-match against a fixed reactive
+retriever's top-k** — `serve_rate` (all k staged = zero-blocking) and `coverage` (partial
+serving), reported as % of an oracle ceiling with a retention/new-state split. Ungameable (IDs,
+not similarity) and it measures what an anticipatory memory is *for*: the right content in the
+cache before it's asked for, over real text, not the discrete `flow:*` tokens the prefetch arm
+uses. Protocol in `janus/serving_protocol.py`; details in `spec.md` §12.
+
+**The opener track (v0.3).** Every other arm is one isolated session; this is the first place
+"the same agent, running many sessions over time" exists at all. Several named streams each carry
+a different, known bias in what their sessions tend to open with (one stream has no real bias, a
+control), replayed in order so a system can build real history before any grading starts. Grades
+whether the cache is already warm, before the session's own first informative event is even
+observed, based only on that stream's past. Protocol in `janus/opener_protocol.py`.
+
+**The handoff track (v0.4).** Paired tickets: an upstream session, then a downstream session
+whose topic matches upstream's *most of the time* and is unrelated the rest of the time — the
+noisy edge a real confidence gate has to handle. Grades whether downstream is primed before it
+asks anything, learned purely by watching which stream tends to act right before another one
+reads, never told the two streams are related. Protocol in `janus/handoff_protocol.py`.
 
 ## Reference results (reproduce with the quick-start commands)
 
@@ -169,6 +191,50 @@ End-to-end, `--end-to-end` (reference systems): 0.63 context-ready × 0.56 conte
 (Context-ready is the mean prefetch serve@3 over the flows; it fell from 0.70 when `flow:deferred`
 joined the mean, since a bigram serves only 0.25 there.)
 
+### Serving reference ladder, `--serving` — coverage (k=3, stage_n=8, cache_size=24)
+
+| workload | Random | PersistenceNull | ceiling |
+|---|---|---|---|
+| `flow:easy` | 33.9% | 56.3% | 94.2% |
+| `flow:branchy` | 37.3% | 77.6% | 93.1% |
+| `flow:longdep` | 36.2% | 73.8% | 90.6% |
+| `flow:foggy` | 36.4% | 76.8% | 91.0% |
+| `flow:interrupted` | 35.9% | 69.6% | 93.0% |
+| `flow:deferred`, `random-control` | — | — | not yet run |
+
+`PersistenceNull` is the text-track analogue of `RetentionOnly`: no session memory at all, just
+"stage whatever's nearest, by meaning, to what just happened" — the fair floor for judging
+whether a system carries anything more than the last event. `flow:deferred` and
+`random-control` are the two rows still pending on this arm; reported as missing, not omitted.
+
+### Opener reference ladder, `--opener` — % of ceiling (k=3, stage_n=8, 80 sessions/stream, 30 warmup)
+
+| stream | Random | Majority | ceiling (raw coverage) |
+|---|---|---|---|
+| one task, 70% of tickets | 17.3% | 60.7% (**87%**) | 70.0% |
+| one task, 70% of tickets (different task) | 22.0% | 52.7% (**90%**) | 58.7% |
+| two tasks, 50/35% split | 16.0% | 54.0% (**89%**) | 60.7% |
+| no real bias (control) | 16.7% | 37.3% (**74%**) | 50.7% |
+
+`Majority` counts which corpus document was nearest to a session's first informative event,
+purely by watching sessions happen — no forefetch code, no internal row-id access, the same
+core idea forefetch's own opener mechanism uses. The control stream stays the lowest score for
+every real system, as it should; its ceiling is not zero, because even an unbiased stream has
+some structure a smart system can exploit (see the code comments in `janus/opener.py` for why).
+
+### Handoff reference ladder, `--handoff` — coverage (k=3, stage_n=8, p_match=0.85)
+
+| tickets | Random | Learned | ceiling (Monte Carlo) |
+|---|---|---|---|
+| 80 | 26.0% | 32.7% | 91.3% |
+| 150 | 28.2% | 40.9% | 92.7% |
+
+`Learned` tracks the nearest upstream corpus document to whatever upstream just did, and counts
+which downstream document tends to follow it — pure co-occurrence counting, the same "learned by
+watching, never declared" idea as forefetch's real transition graph, without forefetch itself.
+Ceiling here is a Monte Carlo estimate (500 calibration tickets per run), not an exact forward
+pass like the other two arms' ceilings — disclosed, not asserted as exact; see `janus/handoff.py`.
+
 ## Submit a system
 Implement two methods and point the runner at the class:
 ```python
@@ -202,6 +268,47 @@ anchors (random floor, keyword-only, and the reference embedding+recency Default
 (returning the *current* fact, not a stale one). Encoder is pluggable: local `bge-small` by default,
 or OpenAI `text-embedding-3-small` via `JANUS_EMBED=openai` + a key.
 
+## Serving submission
+```python
+class MyStaging:
+    def fit(self, corpus: list[dict]) -> "MyStaging": ...     # corpus: {id, text}
+    def reset(self) -> None: ...                              # a new session is starting
+    def step(self, event_text: str, stage_n: int) -> list[int]: ...   # ids to stage now
+```
+```bash
+python -m janus.run --serving --serving-system my_pkg.my_mod:MyStaging
+```
+You get back **coverage** and **serve_rate** (all-or-nothing) per workload, as % of the oracle
+ceiling, split into retention (next == current, served free by any cache) and new-state.
+
+## Opener submission
+```python
+class MyOpener:
+    def fit(self, corpus_by_stream: dict[str, list[dict]]) -> "MyOpener": ...
+    def open_session(self, stream_id: str, stage_n: int) -> list[int]: ...  # before anything
+    def step(self, stream_id: str, event_text: str, stage_n: int) -> list[int]: ...
+```
+```bash
+python -m janus.run --opener --opener-system my_pkg.my_mod:MyOpener
+```
+You get back **coverage** per stream, as % of ceiling — how much of a new session's real need
+was already staged, based only on that stream's own history, before the session said anything.
+
+## Handoff submission
+```python
+class MyHandoff:
+    def fit(self, corpus_by_stream: dict[str, list[dict]]) -> "MyHandoff": ...  # {'upstream', 'downstream'}
+    def upstream_step(self, event_text: str) -> None: ...          # never graded directly
+    def downstream_open(self, stage_n: int) -> list[int]: ...      # before downstream asks
+    def downstream_step(self, event_text: str, stage_n: int) -> list[int]: ...
+```
+```bash
+python -m janus.run --handoff --handoff-system my_pkg.my_mod:MyHandoff
+```
+You get back **coverage**, as % of a Monte Carlo ceiling estimate — whether downstream was
+primed before it asked, learned purely from watching upstream and downstream act, never told
+they are related.
+
 ## The suites
 - **Prefetch (generated, each with an exact ceiling — the scored core):** `flow:easy`,
   `flow:branchy`, `flow:longdep`, `flow:foggy`, `flow:interrupted`, `flow:deferred`, plus the
@@ -212,6 +319,12 @@ or OpenAI `text-embedding-3-small` via `JANUS_EMBED=openai` + a key.
   core, kept only to show the generated-data findings replicate on a real dataset.
 - **Recall (generated, known answers):** `recall:lookup`, `recall:update`, `recall:aggregate`,
   `recall:multisession`.
+- **Serving (generated, real text):** the same `flow:*` workloads, rendered as natural-language
+  event text instead of symbols and replayed as a live cache-staging session — see `--serving`.
+- **Opener (generated streams):** four named streams, each a different known bias in what its
+  sessions open with, one with no real bias as a control — see `--opener`.
+- **Handoff (generated tickets):** paired upstream/downstream sessions with a noisy, learnable
+  cross-stream dependency — see `--handoff`.
 
 ## Layout
 Repo root holds packaging (`pyproject.toml`, `LICENSE`, `NOTICE`, `README.md`, `spec.md`); the
@@ -220,14 +333,20 @@ import package is `janus/`:
 | file | role |
 |---|---|
 | `janus/protocol.py` / `recall_protocol.py` | the Predictor / RecallSystem contracts |
+| `janus/serving_protocol.py` / `opener_protocol.py` / `handoff_protocol.py` | the StagingSystem / OpenerStagingSystem / HandoffStagingSystem contracts |
 | `janus/generators/workflow.py` · `oracle.py` · `suite.py` | prefetch generator, exact ceiling, settings |
 | `janus/generators/deferred.py` | the deferred-binding generator (`flow:deferred`), same exact ceiling |
 | `janus/generators/recall.py` | recall generator (memory + questions + known answers) |
+| `janus/generators/render.py` | deterministic text rendering (tokens → natural-language events), shared by serving/opener/handoff |
+| `janus/generators/streams.py` | named streams with skewed task priors, for the opener track |
+| `janus/generators/handoff.py` | paired upstream/downstream tickets, for the handoff track |
 | `janus/datasets.py` | registries (prefetch + recall), deterministic splits, manifest |
+| `janus/encoding.py` | the pluggable embedding backend shared by recall, serving, opener, and handoff |
 | `janus/metrics.py` / `recall_metrics.py` | prefetch scoring / recall scoring |
+| `janus/serving.py` / `opener.py` / `handoff.py` | the three real-text tracks' replay harnesses, ceilings, and reference ladders |
 | `janus/baselines.py` / `recall_baselines.py` | prefetch ladder / recall ladder (+ copied BM25) |
 | `janus/harness.py` | measured wall-clock throughput |
-| `janus/run.py` | CLI (`--zoo`, `--recall`, `--slices`, `--throughput`, …) |
+| `janus/run.py` | CLI (`--zoo`, `--recall`, `--serving`, `--opener`, `--handoff`, `--slices`, `--throughput`, …) |
 | `janus/manifest.json` / `leaderboard.json` | frozen checksums, results |
 
 Local and free; no API keys (the optional GRU needs `torch`). License: Apache-2.0.
